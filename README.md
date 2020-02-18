@@ -5,12 +5,12 @@ patch -p1 < xen.patch<br/>
 <br/>
 This also requires a patch to SeaBios to detect the new hypervisor string.
 <br/>
-Add<br/><br/>
+Add<br/>
 
- if (strcmp(signature, "XenVMMXenVMM") == 0 || strcmp(signature, "ZenZenZenZen" == 0))<br/><br/>
+ if (strcmp(signature, "XenVMMXenVMM") == 0 || strcmp(signature, "ZenZenZenZen" == 0))<br/>
 	
-at line 72 of xen.c removing<br/><br/>
+at line 72 of xen.c removing<br/>
 
- if (strcmp(signature, "XenVMMXenVMM") == 0)<br/><br/>
+ if (strcmp(signature, "XenVMMXenVMM") == 0)<br/>
 
 Follow instructions on both githubs for general building and installation instructions. <br/>
