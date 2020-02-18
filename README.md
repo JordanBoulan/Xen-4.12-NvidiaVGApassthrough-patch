@@ -3,7 +3,7 @@ apt install build-dep qemu<br/>
 git clone https://github.com/xen-project/xen.git<br/>
 patch -p1 < xen.patch<br/>
 <br/>
-This also requires a patch to SeaBios to detect the new hypervisor string.
+This also requires a tiny one-line patch to SeaBios to detect the new hypervisor string.
 <br/>
 Add<br/>
 
