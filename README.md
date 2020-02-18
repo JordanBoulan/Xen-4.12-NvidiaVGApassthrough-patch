@@ -1,7 +1,7 @@
-apt install build-dep xen
-apt install build-dep qemu
-git clone https://github.com/xen-project/xen.git
-patch -p1 < xen.patch
+apt install build-dep xen<br/>
+apt install build-dep qemu<br/>
+git clone https://github.com/xen-project/xen.git<br/>
+patch -p1 < xen.patch<br/>
 <br/>
 This also requires a patch to SeaBios to detect the new hypervisor string.
 <br/>
@@ -13,4 +13,4 @@ at line 72 of xen.c removing<br/><br/>
 
  if (strcmp(signature, "XenVMMXenVMM") == 0)<br/><br/>
 
-Follow instructions on both githubs for general building and installation instructions 
+Follow instructions on both githubs for general building and installation instructions. <br/>
