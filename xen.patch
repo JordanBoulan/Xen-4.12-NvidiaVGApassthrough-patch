@@ -1,0 +1,206 @@
+diff --git a/tools/firmware/hvmloader/hvmloader.c b/tools/firmware/hvmloader/hvmloader.c
+index 598a226278..603d9bdd05 100644
+--- a/tools/firmware/hvmloader/hvmloader.c
++++ b/tools/firmware/hvmloader/hvmloader.c
+@@ -135,9 +135,11 @@ static void init_hypercalls(void)
+ 
+         if ( !strcmp("XenVMMXenVMM", signature) )
+             break;
++        
++        if ( !strcmp("ZenZenZenZen", signature) )
++            break;
+     }
+-
+-    BUG_ON(strcmp("XenVMMXenVMM", signature) || ((eax - base) < 2));
++    BUG_ON( (strcmp("XenVMMXenVMM", signature) && strcmp("ZenZenZenZen", signature) ) || ((eax - base) < 2));
+ 
+     /* Fill in hypercall transfer pages. */
+     cpuid(base + 2, &eax, &ebx, &ecx, &edx);
+diff --git a/tools/libxl/libxl_create.c b/tools/libxl/libxl_create.c
+index 3a7364e2ac..3844a6fa53 100644
+--- a/tools/libxl/libxl_create.c
++++ b/tools/libxl/libxl_create.c
+@@ -320,6 +320,8 @@ int libxl__domain_build_info_setdefault(libxl__gc *gc,
+         libxl_defbool_setdefault(&b_info->u.hvm.acpi_laptop_slate,  false);
+         libxl_defbool_setdefault(&b_info->u.hvm.nx,                 true);
+         libxl_defbool_setdefault(&b_info->u.hvm.viridian,           false);
++        libxl_defbool_setdefault(&b_info->u.hvm.spoof_viridian,     false);
++        libxl_defbool_setdefault(&b_info->u.hvm.spoof_xen,          false);
+         libxl_defbool_setdefault(&b_info->u.hvm.hpet,               true);
+         libxl_defbool_setdefault(&b_info->u.hvm.vpt_align,          true);
+         libxl_defbool_setdefault(&b_info->u.hvm.altp2m,             false);
+diff --git a/tools/libxl/libxl_types.idl b/tools/libxl/libxl_types.idl
+index 7921950f6a..246e1287d7 100644
+--- a/tools/libxl/libxl_types.idl
++++ b/tools/libxl/libxl_types.idl
+@@ -569,6 +569,8 @@ libxl_domain_build_info = Struct("domain_build_info",[
+                                        ("viridian",         libxl_defbool),
+                                        ("viridian_enable",  libxl_bitmap),
+                                        ("viridian_disable", libxl_bitmap),
++                                       ("spoof_viridian",   libxl_defbool),
++                                       ("spoof_xen",        libxl_defbool),
+                                        ("timeoffset",       string),
+                                        ("hpet",             libxl_defbool),
+                                        ("vpt_align",        libxl_defbool),
+diff --git a/tools/libxl/libxl_x86.c b/tools/libxl/libxl_x86.c
+index 1cae0e2b26..6cf1e491c5 100644
+--- a/tools/libxl/libxl_x86.c
++++ b/tools/libxl/libxl_x86.c
+@@ -422,6 +422,16 @@ static int hvm_set_conf_params(libxl__gc *gc, uint32_t domid,
+             LOG(ERROR, "Couldn't set HVM_PARAM_MCA_CAP");
+             goto out;
+         }
++        if (xc_hvm_param_set(xch, domid, HVM_PARAM_SPOOF_XEN,
++                             libxl_defbool_val(info->u.hvm.spoof_xen))) {
++            LOG(ERROR, "Couldn't set HVM_PARAM_SPOOF_XEN");
++            goto out;
++        }
++        if (xc_hvm_param_set(xch, domid, HVM_PARAM_SPOOF_VIRIDIAN,
++                             libxl_defbool_val(info->u.hvm.spoof_viridian))) {
++            LOG(ERROR, "Couldn't set HVM_PARAM_SPOOF_VIRIDIAN");
++            goto out;
++        }
+ 
+         /* Fallthrough */
+     case LIBXL_DOMAIN_TYPE_PVH:
+diff --git a/tools/misc/xen-detect.c b/tools/misc/xen-detect.c
+index fd187a4be6..8e66fc2c1c 100644
+--- a/tools/misc/xen-detect.c
++++ b/tools/misc/xen-detect.c
+@@ -83,6 +83,9 @@ static int check_for_xen(int pv_context)
+ 
+         if ( !strcmp("XenVMMXenVMM", signature) && (regs[0] >= (base + 2)) )
+             goto found;
++        
++        if ( !strcmp("ZenZenZenZen", signature) && (regs[0] >= (base + 2)) )
++            goto found;
+     }
+ 
+     return 0;
+diff --git a/tools/xl/xl_parse.c b/tools/xl/xl_parse.c
+index b881184804..381bdb72d6 100644
+--- a/tools/xl/xl_parse.c
++++ b/tools/xl/xl_parse.c
+@@ -1668,6 +1668,8 @@ void parse_config_data(const char *config_source,
+         xlu_cfg_get_defbool(config, "nx", &b_info->u.hvm.nx, 0);
+         xlu_cfg_get_defbool(config, "hpet", &b_info->u.hvm.hpet, 0);
+         xlu_cfg_get_defbool(config, "vpt_align", &b_info->u.hvm.vpt_align, 0);
++        xlu_cfg_get_defbool(config, "spoof_xen", &b_info->u.hvm.spoof_xen, 0);
++        xlu_cfg_get_defbool(config, "spoof_viridian", &b_info->u.hvm.spoof_viridian, 0);
+         xlu_cfg_get_defbool(config, "apic", &b_info->apic, 0);
+ 
+         switch (xlu_cfg_get_list(config, "viridian",
+diff --git a/xen/arch/x86/hvm/hvm.c b/xen/arch/x86/hvm/hvm.c
+index 00a9e70b7c..22e423a9ea 100644
+--- a/xen/arch/x86/hvm/hvm.c
++++ b/xen/arch/x86/hvm/hvm.c
+@@ -4272,6 +4272,12 @@ static int hvm_set_param(struct domain *d, uint32_t index, uint64_t value)
+     case HVM_PARAM_IOREQ_SERVER_PFN:
+         d->arch.hvm.ioreq_gfn.base = value;
+         break;
++    case HVM_PARAM_SPOOF_XEN:
++        d->arch.hvm_domain.spoof_xen = a.value;
++        break;
++    case HVM_PARAM_SPOOF_VIRIDIAN:
++        d->arch.hvm_domain.spoof_viridian = a.value;
++        break;
+     case HVM_PARAM_NR_IOREQ_SERVER_PAGES:
+     {
+         unsigned int i;
+diff --git a/xen/arch/x86/hvm/viridian/viridian.c b/xen/arch/x86/hvm/viridian/viridian.c
+index cd8f210198..35df3a8897 100644
+--- a/xen/arch/x86/hvm/viridian/viridian.c
++++ b/xen/arch/x86/hvm/viridian/viridian.c
+@@ -121,11 +121,18 @@ void cpuid_viridian_leaves(const struct vcpu *v, uint32_t leaf,
+     switch ( leaf )
+     {
+     case 0:
+-        res->a = 0x40000006; /* Maximum leaf */
+-        memcpy(&res->b, "Micr", 4);
++     
++
++    if (!d->arch.hvm_domain.spoof_viridian) { // "Microsoft Hv"
++	    memcpy(&res->b, "Micr", 4);
+         memcpy(&res->c, "osof", 4);
+-        memcpy(&res->d, "t Hv", 4);
+-        break;
++	    memcpy(&res->d, "t Hv", 4);
++	} 
++    else {
++		memcpy(&res->b, "Wetw", 4);
++		memcpy(&res->c, "are ", 4);
++		memcpy(&res->d, "Labs", 4);
++	}
+ 
+     case 1:
+         memcpy(&res->a, "Hv#1", 4);
+diff --git a/xen/arch/x86/traps.c b/xen/arch/x86/traps.c
+index 56067f85d1..693e10ec15 100644
+--- a/xen/arch/x86/traps.c
++++ b/xen/arch/x86/traps.c
+@@ -893,10 +893,18 @@ void cpuid_hypervisor_leaves(const struct vcpu *v, uint32_t leaf,
+     {
+     case 0:
+         res->a = base + limit; /* Largest leaf */
+-        res->b = XEN_CPUID_SIGNATURE_EBX;
++    if (!d->arch.hvm_domain.spoof_xen) {
++	    res->b = XEN_CPUID_SIGNATURE_EBX;
+         res->c = XEN_CPUID_SIGNATURE_ECX;
+-        res->d = XEN_CPUID_SIGNATURE_EDX;
+-        break;
++	    res->d = XEN_CPUID_SIGNATURE_EDX;
++	} 
++    else
++	{
++		res->b = ZEN_CPUID_SIGNATURE_EBX;
++		res->c = ZEN_CPUID_SIGNATURE_ECX;
++		res->d = ZEN_CPUID_SIGNATURE_EDX;
++	}
++    break;
+ 
+     case 1:
+         res->a = (xen_major_version() << 16) | xen_minor_version();
+diff --git a/xen/include/asm-x86/hvm/domain.h b/xen/include/asm-x86/hvm/domain.h
+index 8f70ba2b1a..a7bb89d5a0 100644
+--- a/xen/include/asm-x86/hvm/domain.h
++++ b/xen/include/asm-x86/hvm/domain.h
+@@ -155,6 +155,9 @@ struct hvm_domain {
+     /* hypervisor intercepted msix table */
+     struct list_head       msixtbl_list;
+ 
++    bool_t                 spoof_xen;
++    bool_t                 spoof_viridian;
++
+     struct viridian_domain *viridian;
+ 
+     bool_t                 qemu_mapcache_invalidate;
+diff --git a/xen/include/public/arch-x86/cpuid.h b/xen/include/public/arch-x86/cpuid.h
+index ce46305bee..7e63c55db2 100644
+--- a/xen/include/public/arch-x86/cpuid.h
++++ b/xen/include/public/arch-x86/cpuid.h
+@@ -53,6 +53,10 @@
+ #define XEN_CPUID_SIGNATURE_ECX 0x65584d4d /* "MMXe" */
+ #define XEN_CPUID_SIGNATURE_EDX 0x4d4d566e /* "nVMM" */
+ 
++#define ZEN_CPUID_SIGNATURE_EBX 0x5A6e655A /* "ZenZ" */
++#define ZEN_CPUID_SIGNATURE_ECX 0x655A6e65 /* "enZe" */
++#define ZEN_CPUID_SIGNATURE_EDX 0x6e655A6e /* "nZen" */
++
+ /*
+  * Leaf 2 (0x40000x01)
+  * EAX[31:16]: Xen major version.
+diff --git a/xen/include/public/hvm/params.h b/xen/include/public/hvm/params.h
+index 36832e4b94..4a216e7f98 100644
+--- a/xen/include/public/hvm/params.h
++++ b/xen/include/public/hvm/params.h
+@@ -303,6 +303,9 @@
+ #define XEN_HVM_MCA_CAP_LMCE   (xen_mk_ullong(1) << 0)
+ #define XEN_HVM_MCA_CAP_MASK   XEN_HVM_MCA_CAP_LMCE
+ 
+-#define HVM_NR_PARAMS 39
++#define HVM_PARAM_SPOOF_XEN		39
++#define HVM_PARAM_SPOOF_VIRIDIAN	40
++#define HVM_NR_PARAMS 41
++
+ 
+ #endif /* __XEN_PUBLIC_HVM_PARAMS_H__ */
