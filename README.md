@@ -1,5 +1,5 @@
-apt install build-dep xen<br/>
-apt install build-dep qemu<br/>
+apt build-dep xen<br/>
+apt build-dep qemu<br/>
 git clone https://github.com/xen-project/xen.git<br/>
 patch -p1 < xen.patch<br/>
 <br/>

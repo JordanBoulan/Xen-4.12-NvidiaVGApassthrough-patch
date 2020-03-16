@@ -17,7 +17,7 @@ index 598a226278..603d9bdd05 100644
      /* Fill in hypercall transfer pages. */
      cpuid(base + 2, &eax, &ebx, &ecx, &edx);
 diff --git a/tools/libxl/libxl_create.c b/tools/libxl/libxl_create.c
-index 3a7364e2ac..3844a6fa53 100644
+index 772344c648..996e63b90c 100644
 --- a/tools/libxl/libxl_create.c
 +++ b/tools/libxl/libxl_create.c
 @@ -320,6 +320,8 @@ int libxl__domain_build_info_setdefault(libxl__gc *gc,
@@ -30,10 +30,10 @@ index 3a7364e2ac..3844a6fa53 100644
          libxl_defbool_setdefault(&b_info->u.hvm.vpt_align,          true);
          libxl_defbool_setdefault(&b_info->u.hvm.altp2m,             false);
 diff --git a/tools/libxl/libxl_types.idl b/tools/libxl/libxl_types.idl
-index 7921950f6a..246e1287d7 100644
+index d0d431614f..f560206444 100644
 --- a/tools/libxl/libxl_types.idl
 +++ b/tools/libxl/libxl_types.idl
-@@ -569,6 +569,8 @@ libxl_domain_build_info = Struct("domain_build_info",[
+@@ -570,6 +570,8 @@ libxl_domain_build_info = Struct("domain_build_info",[
                                         ("viridian",         libxl_defbool),
                                         ("viridian_enable",  libxl_bitmap),
                                         ("viridian_disable", libxl_bitmap),
@@ -43,10 +43,10 @@ index 7921950f6a..246e1287d7 100644
                                         ("hpet",             libxl_defbool),
                                         ("vpt_align",        libxl_defbool),
 diff --git a/tools/libxl/libxl_x86.c b/tools/libxl/libxl_x86.c
-index 1cae0e2b26..6cf1e491c5 100644
+index f8bc828e62..4b67d28bc2 100644
 --- a/tools/libxl/libxl_x86.c
 +++ b/tools/libxl/libxl_x86.c
-@@ -422,6 +422,16 @@ static int hvm_set_conf_params(libxl__gc *gc, uint32_t domid,
+@@ -420,6 +420,16 @@ static int hvm_set_conf_params(libxl__gc *gc, uint32_t domid,
              LOG(ERROR, "Couldn't set HVM_PARAM_MCA_CAP");
              goto out;
          }
@@ -91,24 +91,24 @@ index b881184804..381bdb72d6 100644
  
          switch (xlu_cfg_get_list(config, "viridian",
 diff --git a/xen/arch/x86/hvm/hvm.c b/xen/arch/x86/hvm/hvm.c
-index 00a9e70b7c..22e423a9ea 100644
+index a2abad9f76..c7fdce0c5b 100644
 --- a/xen/arch/x86/hvm/hvm.c
 +++ b/xen/arch/x86/hvm/hvm.c
-@@ -4272,6 +4272,12 @@ static int hvm_set_param(struct domain *d, uint32_t index, uint64_t value)
+@@ -4217,6 +4217,12 @@ static int hvm_set_param(struct domain *d, uint32_t index, uint64_t value)
      case HVM_PARAM_IOREQ_SERVER_PFN:
          d->arch.hvm.ioreq_gfn.base = value;
          break;
 +    case HVM_PARAM_SPOOF_XEN:
-+        d->arch.hvm_domain.spoof_xen = a.value;
++        d->arch.hvm.spoof_xen = value;
 +        break;
 +    case HVM_PARAM_SPOOF_VIRIDIAN:
-+        d->arch.hvm_domain.spoof_viridian = a.value;
++        d->arch.hvm.spoof_viridian = value;
 +        break;
      case HVM_PARAM_NR_IOREQ_SERVER_PAGES:
      {
          unsigned int i;
 diff --git a/xen/arch/x86/hvm/viridian/viridian.c b/xen/arch/x86/hvm/viridian/viridian.c
-index cd8f210198..35df3a8897 100644
+index 977c1bc54f..35515e5cdb 100644
 --- a/xen/arch/x86/hvm/viridian/viridian.c
 +++ b/xen/arch/x86/hvm/viridian/viridian.c
 @@ -121,11 +121,18 @@ void cpuid_viridian_leaves(const struct vcpu *v, uint32_t leaf,
@@ -119,7 +119,7 @@ index cd8f210198..35df3a8897 100644
 -        memcpy(&res->b, "Micr", 4);
 +     
 +
-+    if (!d->arch.hvm_domain.spoof_viridian) { // "Microsoft Hv"
++    if (!d->arch.hvm.spoof_viridian ) { // "Microsoft Hv"
 +	    memcpy(&res->b, "Micr", 4);
          memcpy(&res->c, "osof", 4);
 -        memcpy(&res->d, "t Hv", 4);
@@ -135,7 +135,7 @@ index cd8f210198..35df3a8897 100644
      case 1:
          memcpy(&res->a, "Hv#1", 4);
 diff --git a/xen/arch/x86/traps.c b/xen/arch/x86/traps.c
-index 56067f85d1..693e10ec15 100644
+index f4f2c13ae9..169dcc11a3 100644
 --- a/xen/arch/x86/traps.c
 +++ b/xen/arch/x86/traps.c
 @@ -893,10 +893,18 @@ void cpuid_hypervisor_leaves(const struct vcpu *v, uint32_t leaf,
@@ -143,7 +143,7 @@ index 56067f85d1..693e10ec15 100644
      case 0:
          res->a = base + limit; /* Largest leaf */
 -        res->b = XEN_CPUID_SIGNATURE_EBX;
-+    if (!d->arch.hvm_domain.spoof_xen) {
++    if (!d->arch.hvm.spoof_xen) {
 +	    res->b = XEN_CPUID_SIGNATURE_EBX;
          res->c = XEN_CPUID_SIGNATURE_ECX;
 -        res->d = XEN_CPUID_SIGNATURE_EDX;
@@ -190,10 +190,10 @@ index ce46305bee..7e63c55db2 100644
   * Leaf 2 (0x40000x01)
   * EAX[31:16]: Xen major version.
 diff --git a/xen/include/public/hvm/params.h b/xen/include/public/hvm/params.h
-index 36832e4b94..4a216e7f98 100644
+index 0a91bfa749..1e84f99fa9 100644
 --- a/xen/include/public/hvm/params.h
 +++ b/xen/include/public/hvm/params.h
-@@ -303,6 +303,9 @@
+@@ -300,6 +300,9 @@
  #define XEN_HVM_MCA_CAP_LMCE   (xen_mk_ullong(1) << 0)
  #define XEN_HVM_MCA_CAP_MASK   XEN_HVM_MCA_CAP_LMCE
  
